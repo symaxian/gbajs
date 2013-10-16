@@ -31,7 +31,7 @@ try {
 		console.log(error);
 		gba.pause();
 		var screen = document.getElementById('screen');
-		if (screen.getAttribute('class') == 'dead') {
+		if (screen.getAttribute('class') === 'dead') {
 			console.log('We appear to have crashed multiple times without reseting.');
 			return;
 		}
