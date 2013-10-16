@@ -65,7 +65,6 @@ ARMCore.prototype.resetCPU = function(startOffset) {
 	this.cpsrZ = false;
 	this.cpsrN = false;
 
-	this.currentBank = null;
 	this.bankedRegisters = [
 		new Int32Array(7),
 		new Int32Array(7),
@@ -130,6 +129,153 @@ ARMCore.prototype.resetCPU = function(startOffset) {
 		}
 		this.irq.updateTimers();
 	};
+};
+
+ARMCore.prototype.freeze = function() {
+	return {
+		'gprs': [
+			this.gprs[0],
+			this.gprs[1],
+			this.gprs[2],
+			this.gprs[3],
+			this.gprs[4],
+			this.gprs[5],
+			this.gprs[6],
+			this.gprs[7],
+			this.gprs[8],
+			this.gprs[9],
+			this.gprs[10],
+			this.gprs[11],
+			this.gprs[12],
+			this.gprs[13],
+			this.gprs[14],
+			this.gprs[15],
+		],
+		'mode': this.mode,
+		'cpsrI': this.cpsrI,
+		'cpsrF': this.cpsrF,
+		'cpsrV': this.cpsrV,
+		'cpsrC': this.cpsrC,
+		'cpsrZ': this.cpsrZ,
+		'cpsrN': this.cpsrN,
+		'bankedRegisters': [
+			[
+				this.bankedRegisters[0][0],
+				this.bankedRegisters[0][1],
+				this.bankedRegisters[0][2],
+				this.bankedRegisters[0][3],
+				this.bankedRegisters[0][4],
+				this.bankedRegisters[0][5],
+				this.bankedRegisters[0][6]
+			],
+			[
+				this.bankedRegisters[1][0],
+				this.bankedRegisters[1][1],
+				this.bankedRegisters[1][2],
+				this.bankedRegisters[1][3],
+				this.bankedRegisters[1][4],
+				this.bankedRegisters[1][5],
+				this.bankedRegisters[1][6]
+			],
+			[
+				this.bankedRegisters[2][0],
+				this.bankedRegisters[2][1]
+			],
+			[
+				this.bankedRegisters[3][0],
+				this.bankedRegisters[3][1]
+			],
+			[
+				this.bankedRegisters[4][0],
+				this.bankedRegisters[4][1]
+			],
+			[
+				this.bankedRegisters[5][0],
+				this.bankedRegisters[5][1]
+			]
+		],
+		'spsr': this.spsr,
+		'bankedSPSRs': [
+			this.bankedSPSRs[0],
+			this.bankedSPSRs[1],
+			this.bankedSPSRs[2],
+			this.bankedSPSRs[3],
+			this.bankedSPSRs[4],
+			this.bankedSPSRs[5]
+		],
+		'cycles': this.cycles
+	};
+};
+
+ARMCore.prototype.defrost = function(frost) {
+	this.instruction = null;
+
+	this.page = null;
+	this.pageId = 0;
+	this.pageRegion = -1;
+
+	this.gprs[0] = frost.gprs[0];
+	this.gprs[1] = frost.gprs[1];
+	this.gprs[2] = frost.gprs[2];
+	this.gprs[3] = frost.gprs[3];
+	this.gprs[4] = frost.gprs[4];
+	this.gprs[5] = frost.gprs[5];
+	this.gprs[6] = frost.gprs[6];
+	this.gprs[7] = frost.gprs[7];
+	this.gprs[8] = frost.gprs[8];
+	this.gprs[9] = frost.gprs[9];
+	this.gprs[10] = frost.gprs[10];
+	this.gprs[11] = frost.gprs[11];
+	this.gprs[12] = frost.gprs[12];
+	this.gprs[13] = frost.gprs[13];
+	this.gprs[14] = frost.gprs[14];
+	this.gprs[15] = frost.gprs[15];
+
+	this.mode = frost.mode;
+	this.cpsrI = frost.cpsrI;
+	this.cpsrF = frost.cpsrF;
+	this.cpsrV = frost.cpsrV;
+	this.cpsrC = frost.cpsrC;
+	this.cpsrZ = frost.cpsrZ;
+	this.cpsrN = frost.cpsrN;
+
+	this.bankedRegisters[0][0] = frost.bankedRegisters[0][0];
+	this.bankedRegisters[0][1] = frost.bankedRegisters[0][1];
+	this.bankedRegisters[0][2] = frost.bankedRegisters[0][2];
+	this.bankedRegisters[0][3] = frost.bankedRegisters[0][3];
+	this.bankedRegisters[0][4] = frost.bankedRegisters[0][4];
+	this.bankedRegisters[0][5] = frost.bankedRegisters[0][5];
+	this.bankedRegisters[0][6] = frost.bankedRegisters[0][6];
+
+	this.bankedRegisters[1][0] = frost.bankedRegisters[1][0];
+	this.bankedRegisters[1][1] = frost.bankedRegisters[1][1];
+	this.bankedRegisters[1][2] = frost.bankedRegisters[1][2];
+	this.bankedRegisters[1][3] = frost.bankedRegisters[1][3];
+	this.bankedRegisters[1][4] = frost.bankedRegisters[1][4];
+	this.bankedRegisters[1][5] = frost.bankedRegisters[1][5];
+	this.bankedRegisters[1][6] = frost.bankedRegisters[1][6];
+
+	this.bankedRegisters[2][0] = frost.bankedRegisters[2][0];
+	this.bankedRegisters[2][1] = frost.bankedRegisters[2][1];
+
+	this.bankedRegisters[3][0] = frost.bankedRegisters[3][0];
+	this.bankedRegisters[3][1] = frost.bankedRegisters[3][1];
+
+	this.bankedRegisters[4][0] = frost.bankedRegisters[4][0];
+	this.bankedRegisters[4][1] = frost.bankedRegisters[4][1];
+
+	this.bankedRegisters[5][0] = frost.bankedRegisters[5][0];
+	this.bankedRegisters[5][1] = frost.bankedRegisters[5][1];
+
+	this.spsr = frost.spsr;
+	this.bankedSPSRs[0] = frost.bankedSPSRs[0];
+	this.bankedSPSRs[1] = frost.bankedSPSRs[1];
+	this.bankedSPSRs[2] = frost.bankedSPSRs[2];
+	this.bankedSPSRs[3] = frost.bankedSPSRs[3];
+	this.bankedSPSRs[4] = frost.bankedSPSRs[4];
+	this.bankedSPSRs[5] = frost.bankedSPSRs[5];
+
+	this.cycles = frost.cycles;
 };
 
 ARMCore.prototype.fetchPage = function(address) {
@@ -715,7 +861,7 @@ ARMCore.prototype.compileArm = function(instruction) {
 					op = this.armCompiler.constructSMLALS(rd, rn, rs, rm, condOp);
 					break;
 				}
-				op.touchesPC = rd == this.PC;
+				op.writesPC = rd == this.PC;
 			} else {
 				// Halfword and signed byte data transfer
 				var load = instruction & 0x00100000;
@@ -724,6 +870,7 @@ ARMCore.prototype.compileArm = function(instruction) {
 				var loOffset = rm = instruction & 0x0000000F;
 				var h = instruction & 0x00000020;
 				var s = instruction & 0x00000040;
+				var w = instruction & 0x00200000;
 				var i = instruction & 0x00400000;
 
 				var address;
@@ -733,7 +880,7 @@ ARMCore.prototype.compileArm = function(instruction) {
 				} else {
 					address = this.armCompiler.constructAddressingMode23Register(instruction, rm, condOp);
 				}
-				address.writesPC = w && rn == this.PC;
+				address.writesPC = !!w && rn == this.PC;
 
 				if ((instruction & 0x00000090) == 0x00000090) {
 					if (load) {
@@ -867,7 +1014,7 @@ ARMCore.prototype.compileArm = function(instruction) {
 				} else {
 					op = this.armCompiler.constructLDM(rs, address, condOp);
 				}
-				op.writesPC = rs & (1 << 15);
+				op.writesPC = !!(rs & (1 << 15));
 			} else {
 				// STM
 				if (user) {
@@ -1142,6 +1289,7 @@ ARMCore.prototype.compileThumb = function(instruction) {
 			op = this.thumbCompiler.constructLDRSH(rd, rn, rm);
 			break;
 		}
+		op.writesPC = false;
 	} else if ((instruction & 0xE000) == 0x6000) {
 		// Load and store with immediate offset
 		var rd = instruction & 0x0007;
@@ -1172,7 +1320,7 @@ ARMCore.prototype.compileThumb = function(instruction) {
 		op.writesPC = false;
 	} else if ((instruction & 0xF600) == 0xB400) {
 		// Push and pop registers
-		var r = instruction & 0x0100;
+		var r = !!(instruction & 0x0100);
 		var rs = instruction & 0x00FF;
 		if (instruction & 0x0800) {
 			// POP

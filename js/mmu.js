@@ -54,6 +54,9 @@ MemoryView.prototype.invalidatePage = function(address) {};
 MemoryView.prototype.replaceData = function(memory, offset) {
 	this.buffer = memory;
 	this.view = new DataView(this.buffer, typeof(offset) === "number" ? offset : 0);
+	if (this.icache) {
+		this.icache = new Array(this.icache.length);
+	}
 };
 
 function MemoryBlock(size, cacheBits) {
@@ -322,8 +325,21 @@ GameBoyAdvanceMMU.prototype.clear = function() {
 	];
 };
 
-GameBoyAdvanceMMU.prototype.loadBios = function(bios) {
+GameBoyAdvanceMMU.prototype.freeze = function() {
+	return {
+		'ram': Serializer.prefix(this.memory[this.REGION_WORKING_RAM].buffer),
+		'iram': Serializer.prefix(this.memory[this.REGION_WORKING_IRAM].buffer),
+	};
+};
+
+GameBoyAdvanceMMU.prototype.defrost = function(frost) {
+	this.memory[this.REGION_WORKING_RAM].replaceData(frost.ram);
+	this.memory[this.REGION_WORKING_IRAM].replaceData(frost.iram);
+};
+
+GameBoyAdvanceMMU.prototype.loadBios = function(bios, real) {
 	this.bios = new BIOSView(bios);
+	this.bios.real = !!real;
 };
 
 GameBoyAdvanceMMU.prototype.loadRom = function(rom, process) {

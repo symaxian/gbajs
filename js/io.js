@@ -108,8 +108,9 @@ function GameBoyAdvanceIO() {
 	this.TM3CNT_HI = 0x10E;
 
 	// SIO (note: some of these are repeated)
-	this.SIODATA32 = 0x120;
+	this.SIODATA32_LO = 0x120;
 	this.SIOMULTI0 = 0x120;
+	this.SIODATA32_HI = 0x122;
 	this.SIOMULTI1 = 0x122;
 	this.SIOMULTI2 = 0x124;
 	this.SIOMULTI3 = 0x126;
@@ -132,18 +133,14 @@ function GameBoyAdvanceIO() {
 	this.WAITCNT = 0x204;
 	this.IME = 0x208;
 
+	this.POSTFLG = 0x300;
+	this.HALTCNT = 0x301;
+
 	this.DEFAULT_DISPCNT = 0x0080;
 	this.DEFAULT_SOUNDBIAS = 0x200;
 	this.DEFAULT_BGPA = 1;
 	this.DEFAULT_BGPD = 1;
-};
-
-GameBoyAdvanceIO.prototype.setCPU = function(cpu) {
-	this.cpu = cpu;
-};
-
-GameBoyAdvanceIO.prototype.setVideo = function(video) {
-	this.video = video;
+	this.DEFAULT_RCNT = 0x8000;
 };
 
 GameBoyAdvanceIO.prototype.clear = function() {
@@ -155,6 +152,21 @@ GameBoyAdvanceIO.prototype.clear = function() {
 	this.registers[this.BG2PD >> 1] = this.DEFAULT_BGPD;
 	this.registers[this.BG3PA >> 1] = this.DEFAULT_BGPA;
 	this.registers[this.BG3PD >> 1] = this.DEFAULT_BGPD;
+	this.registers[this.RCNT >> 1] = this.RCNT;
+};
+
+GameBoyAdvanceIO.prototype.freeze = function() {
+	return {
+		'registers': Serializer.prefix(this.registers.buffer)
+	};
+};
+
+GameBoyAdvanceIO.prototype.defrost = function(frost) {
+	this.registers = new Uint16Array(frost.registers);
+	// Video registers don't serialize themselves
+	for (var i = 0; i <= this.BLDY; i += 2) {
+		this.store16(this.registers[i >> 1]);
+	}
 };
 
 GameBoyAdvanceIO.prototype.load8 = function(offset) {
@@ -215,10 +227,12 @@ GameBoyAdvanceIO.prototype.loadU16 = function(offset) {
 	case this.DMA1CNT_HI:
 	case this.DMA2CNT_HI:
 	case this.DMA3CNT_HI:
+	case this.RCNT:
 	case this.WAITCNT:
 	case this.IE:
 	case this.IF:
 	case this.IME:
+	case this.POSTFLG:
 		// Handled transparently by the written registers
 		break;
 
@@ -256,12 +270,9 @@ GameBoyAdvanceIO.prototype.loadU16 = function(offset) {
 	case this.TM3CNT_LO:
 		return this.cpu.irq.timerRead(3);
 
-	case this.RCNT:
-		this.core.STUB('Reading from unimplemented RCNT');
-		return 0x8000;
+	// SIO
 	case this.SIOCNT:
-		this.core.STUB('Reading from unimplemented SIOCNT');
-		return 0;
+		return this.sio.readSIOCNT();
 
 	case this.KEYINPUT:
 		return this.keypad.currentDown;
@@ -333,6 +344,8 @@ GameBoyAdvanceIO.prototype.loadU16 = function(offset) {
  	case this.SIOMULTI1:
  	case this.SIOMULTI2:
  	case this.SIOMULTI3:
+ 		return this.sio.read((offset - this.SIOMULTI0) >> 1);
+
  	case this.SIODATA8:
  		this.core.STUB('Unimplemented SIO register read: 0x' + offset.toString(16));
  		return 0;
@@ -385,10 +398,20 @@ GameBoyAdvanceIO.prototype.store8 = function(offset, value) {
 	case this.SOUNDCNT_LO:
 	case this.SOUNDCNT_LO | 1:
 	case this.SOUNDCNT_X:
+	case this.IF:
+	case this.IME:
 		break;
 	case this.SOUNDBIAS | 1:
 		this.STUB_REG('sound', offset);
 		break;
+	case this.HALTCNT:
+		value &= 0x80;
+		if (!value) {
+			this.core.irq.halt();
+		} else {
+			this.core.STUB('Stop');
+		}
+		return;
 	default:
 		this.STUB_REG('8-bit I/O', offset);
 		break;
@@ -694,11 +717,13 @@ GameBoyAdvanceIO.prototype.store16 = function(offset, value) {
  		this.STUB_REG('SIO', offset);
  		break;
 	case this.RCNT:
-		this.STUB_REG('RCNT', offset);
+		this.sio.setMode(((value >> 12) & 0xC) | ((this.registers[this.SIOCNT >> 1] >> 12) & 0x3));
+		this.sio.writeRCNT(value);
 		break;
 	case this.SIOCNT:
-		this.STUB_REG('SIOCNT', offset);
-		break;
+		this.sio.setMode(((value >> 12) & 0x3) | ((this.registers[this.RCNT >> 1] >> 12) & 0xC));
+		this.sio.writeSIOCNT(value);
+		return;
 	case this.JOYCNT:
 	case this.JOYSTAT:
 		this.STUB_REG('JOY', offset);

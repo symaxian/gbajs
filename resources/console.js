@@ -7,9 +7,7 @@ function hex(number, leading, usePrefix) {
 	}
 	var string = (number >>> 0).toString(16).toUpperCase();
 	leading -= string.length;
-	if (leading < 0)
-		return string;
-	return (usePrefix ? '0x' : '') + new Array(leading + 1).join('0') + string;
+	return (usePrefix ? '0x' : '')  + new Array(leading + 1).join('0') + string;
 }
 
 function Console(gba) {
@@ -309,25 +307,19 @@ Memory.prototype.refresh = function(row) {
 	for (var i = 0; i < 16; ++i) {
 		child = row.children[i + 1];
 		try {
-			newValue = this.mmu.loadU8(row.offset + i);
-			if (newValue >= 0) {
-				newValue = hex(newValue, 2, false);
-				if (child.textContent == newValue) {
-					child.setAttribute('class', 'memoryCell');
-				} else if (showChanged) {
-					child.setAttribute('class', 'memoryCell changed');
-					child.textContent = newValue;
-				} else {
-					child.setAttribute('class', 'memoryCell');
-					child.textContent = newValue;
-				}
+			newValue = hex(this.mmu.loadU8(row.offset + i), 2, false);
+			if (child.textContent == newValue) {
+				child.setAttribute('class', 'memoryCell');
+			} else if (showChanged) {
+				child.setAttribute('class', 'memoryCell changed');
+				child.textContent = newValue;
 			} else {
 				child.setAttribute('class', 'memoryCell');
-				child.textContent = '--';				
+				child.textContent = newValue;
 			}
 		} catch (exception) {
 			child.setAttribute('class', 'memoryCell');
-			child.textContent = '--';
+			child.textContent = '??';
 		}
 	}
 }

@@ -83,6 +83,41 @@ GameBoyAdvanceInterruptHandler.prototype.clear = function() {
 	this.resetSP();
 };
 
+GameBoyAdvanceInterruptHandler.prototype.freeze = function() {
+	return {
+		'enable': this.enable,
+		'enabledIRQs': this.enabledIRQs,
+		'interruptFlags': this.interruptFlags,
+		'dma': this.dma,
+		'timers': this.timers,
+		'nextEvent': this.nextEvent,
+		'springIRQ': this.springIRQ
+	};
+};
+
+GameBoyAdvanceInterruptHandler.prototype.defrost = function(frost) {
+	this.enable = frost.enable;
+	this.enabledIRQs = frost.enabledIRQs;
+	this.interruptFlags = frost.interruptFlags;
+	this.dma = frost.dma;
+	this.timers = frost.timers;
+	this.timersEnabled = 0;
+	if (this.timers[0].enable) {
+		++this.timersEnabled;
+	}
+	if (this.timers[1].enable) {
+		++this.timersEnabled;
+	}
+	if (this.timers[2].enable) {
+		++this.timersEnabled;
+	}
+	if (this.timers[3].enable) {
+		++this.timersEnabled;
+	}
+	this.nextEvent = frost.nextEvent;
+	this.springIRQ = frost.springIRQ;
+};
+
 GameBoyAdvanceInterruptHandler.prototype.updateTimers = function() {
 	if (this.nextEvent > this.cpu.cycles) {
 		return;
@@ -253,6 +288,11 @@ GameBoyAdvanceInterruptHandler.prototype.swi32 = function(opcode) {
 };
 
 GameBoyAdvanceInterruptHandler.prototype.swi = function(opcode) {
+	if (this.core.mmu.bios.real) {
+		this.cpu.raiseTrap();
+		return;
+	}
+
 	switch (opcode) {
 	case 0x00:
 		// SoftReset
@@ -291,12 +331,7 @@ GameBoyAdvanceInterruptHandler.prototype.swi = function(opcode) {
 		break;
 	case 0x02:
 		// Halt
-		if (!this.enable) {
-			throw "Requested HALT when interrupts were disabled!";
-		}
-		if (!this.waitForIRQ()) {
-			throw "Waiting on interrupt forever.";
-		}
+		this.halt();
 		break;
 	case 0x05:
 		// VBlankIntrWait
@@ -744,6 +779,15 @@ GameBoyAdvanceInterruptHandler.prototype.timerRead = function(timer) {
 		return this.io.registers[(this.io.TM0CNT_LO + (timer << 2)) >> 1];
 	}
 };
+
+GameBoyAdvanceInterruptHandler.prototype.halt = function() {
+	if (!this.enable) {
+		throw "Requested HALT when interrupts were disabled!";
+	}
+	if (!this.waitForIRQ()) {
+		throw "Waiting on interrupt forever.";
+	}
+}
 
 GameBoyAdvanceInterruptHandler.prototype.lz77 = function(source, dest, unitsize) {
 	// TODO: move to a different file

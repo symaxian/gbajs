@@ -3,6 +3,7 @@ function GameBoyAdvance() {
 	this.LOG_WARN = 2;
 	this.LOG_STUB = 4;
 	this.LOG_INFO = 8;
+	this.LOG_DEBUG = 16;
 
 	this.SYS_ID = 'com.endrift.gbajs';
 
@@ -17,6 +18,7 @@ function GameBoyAdvance() {
 	this.audio = new GameBoyAdvanceAudio();
 	this.video = new GameBoyAdvanceVideo();
 	this.keypad = new GameBoyAdvanceKeypad();
+	this.sio = new GameBoyAdvanceSIO();
 
 	// TODO: simplify this graph
 	this.cpu.mmu = this.mmu;
@@ -35,6 +37,7 @@ function GameBoyAdvance() {
 	this.io.audio = this.audio;
 	this.io.video = this.video;
 	this.io.keypad = this.keypad;
+	this.io.sio = this.sio;
 	this.io.core = this;
 
 	this.audio.cpu = this.cpu;
@@ -44,6 +47,8 @@ function GameBoyAdvance() {
 	this.video.core = this;
 
 	this.keypad.core = this;
+
+	this.sio.core = this;
 
 	this.keypad.registerHandlers();
 	this.doStep = this.waitFrame;
@@ -61,6 +66,8 @@ function GameBoyAdvance() {
 	window.queueFrame = function (f) {
 		self.queue = window.setTimeout(f, self.throttle);
 	};
+
+	window.URL = window.URL || window.webkitURL;
 
 	this.video.vblankCallback = function() {
 		self.seenFrame = true;
@@ -90,8 +97,8 @@ GameBoyAdvance.prototype.setCanvasDirect = function(canvas) {
 	this.video.setBacking(this.context);
 };
 
-GameBoyAdvance.prototype.setBios = function(bios) {
-	this.mmu.loadBios(bios);
+GameBoyAdvance.prototype.setBios = function(bios, real) {
+	this.mmu.loadBios(bios, real);
 };
 
 GameBoyAdvance.prototype.setRom = function(rom) {
@@ -128,13 +135,14 @@ GameBoyAdvance.prototype.reset = function() {
 	this.io.clear();
 	this.audio.clear();
 	this.video.clear();
+	this.sio.clear();
 
 	this.mmu.mmap(this.mmu.REGION_IO, this.io);
 	this.mmu.mmap(this.mmu.REGION_PALETTE_RAM, this.video.renderPath.palette);
 	this.mmu.mmap(this.mmu.REGION_VRAM, this.video.renderPath.vram);
 	this.mmu.mmap(this.mmu.REGION_OAM, this.video.renderPath.oam);
 
-	this.cpu.resetCPU(0x08000000);
+	this.cpu.resetCPU(0);
 };
 
 GameBoyAdvance.prototype.step = function() {
@@ -270,31 +278,26 @@ GameBoyAdvance.prototype.decodeBase64 = function(string) {
 		}
 	}
 
-	this.setSavedata(buffer);
+	return buffer;
 };
 
-GameBoyAdvance.prototype.encodeSavedata = function() {
-	var sram = this.mmu.save;
-	if (!sram) {
-		this.WARN("No save data available");
-		return null;
-	}
-	var savedata = [];
+GameBoyAdvance.prototype.encodeBase64 = function(view) {
+	var data = [];
 	var b;
 	var wordstring = [];
 	var triplet;
-	for (var i = 0; i < sram.view.byteLength; ++i) {
-		b = sram.view.getUint8(i, true);
+	for (var i = 0; i < view.byteLength; ++i) {
+		b = view.getUint8(i, true);
 		wordstring.push(String.fromCharCode(b));
 		while (wordstring.length >= 3) {
 			triplet = wordstring.splice(0, 3);
-			savedata.push(btoa(triplet.join('')));
+			data.push(btoa(triplet.join('')));
 		}
 	};
 	if (wordstring.length) {
-		savedata.push(btoa(wordstring.join('')));
+		data.push(btoa(wordstring.join('')));
 	}
-	return savedata.join('');
+	return data.join('');
 };
 
 GameBoyAdvance.prototype.downloadSavedata = function() {
@@ -337,7 +340,27 @@ GameBoyAdvance.prototype.retrieveSavedata = function() {
 	return false;
 };
 
-GameBoyAdvance.prototype.log = function(message) {};
+GameBoyAdvance.prototype.freeze = function() {
+	return {
+		'cpu': this.cpu.freeze(),
+		'mmu': this.mmu.freeze(),
+		'irq': this.irq.freeze(),
+		'io': this.io.freeze(),
+		'audio': this.audio.freeze(),
+		'video': this.video.freeze()
+	}
+};
+
+GameBoyAdvance.prototype.defrost = function(frost) {
+	this.cpu.defrost(frost.cpu);
+	this.mmu.defrost(frost.mmu);
+	this.audio.defrost(frost.audio);
+	this.video.defrost(frost.video);
+	this.irq.defrost(frost.irq);
+	this.io.defrost(frost.io);
+};
+
+GameBoyAdvance.prototype.log = function(level, message) {};
 
 GameBoyAdvance.prototype.setLogger = function(logger) {
 	this.log = logger;
@@ -347,34 +370,40 @@ GameBoyAdvance.prototype.logStackTrace = function(stack) {
 	var overflow = stack.length - 32;
 	this.ERROR('Stack trace follows:');
 	if (overflow > 0) {
-		this.log('> (Too many frames)');
+		this.log(-1, '> (Too many frames)');
 	}
 	for (var i = Math.max(overflow, 0); i < stack.length; ++i) {
-		this.log('> ' + stack[i]);
+		this.log(-1, '> ' + stack[i]);
 	}
 };
 
 GameBoyAdvance.prototype.ERROR = function(error) {
 	if (this.logLevel & this.LOG_ERROR) {
-		this.log('[ERROR] ' + error);
+		this.log(this.LOG_ERROR, error);
 	}
 };
 
 GameBoyAdvance.prototype.WARN = function(warn) {
 	if (this.logLevel & this.LOG_WARN) {
-		this.log('[WARNING] ' + warn);
+		this.log(this.LOG_WARN, warn);
 	}
 };
 
 GameBoyAdvance.prototype.STUB = function(func) {
 	if (this.logLevel & this.LOG_STUB) {
-		this.log('[STUB] ' + func);
+		this.log(this.LOG_STUB, func);
 	}
 };
 
 GameBoyAdvance.prototype.INFO = function(info) {
 	if (this.logLevel & this.LOG_INFO) {
-		this.log('[INFO] ' + info);
+		this.log(this.LOG_INFO, info);
+	}
+};
+
+GameBoyAdvance.prototype.DEBUG = function(info) {
+	if (this.logLevel & this.LOG_DEBUG) {
+		this.log(this.LOG_DEBUG, info);
 	}
 };
 
