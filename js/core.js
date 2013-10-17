@@ -39,11 +39,12 @@ function ARMCore() {
 	this.BASE_FIQ = 0x0000001C;
 
 	this.armCompiler = new ARMCoreArm(this);
-	this.thumbCompiler = new ARMCoreThumb(this);
+	// this.thumbCompiler = new ARMCoreThumb(this);
 	this.generateConds();
 
 	this.gprs = new Int32Array(16);
-};
+
+}
 
 ARMCore.prototype.resetCPU = function(startOffset) {
 	for (var i = 0; i < this.PC; ++i) {
@@ -1048,448 +1049,991 @@ ARMCore.prototype.compileArm = function(instruction, address) {
 };
 
 ARMCore.prototype.compileThumb = function(instruction, address) {
+
 	var op = this.badOp(instruction & 0xFFFF);
 	// var op = function(){ console.log(!(instruction & 0xE000) === 0x1800); throw "HALP" };
 	var cpu = this;
 	var gprs = this.gprs;
 	var writesPC = op.writesPC;
-
 	var interpret = false;
 
 	if ((instruction & 0xFC00) === 0x4000) {
+
 		// Data-processing register
+
 		var rm = (instruction & 0x0038) >> 3;
 		var rd = instruction & 0x0007;
 
-		var opcode = instruction & 0x03C0;
-
 		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
-		this.thumbCompiler.runOpVer3(opcode, rd, rm);
 
-		// switch (instruction & 0x03C0) {
-		// case 0x0000:
-		// 	// AND
-		// 	op = this.thumbCompiler.constructAND(rd, rm);
-		// 	break;
-		// case 0x0040:
-		// 	// EOR
-		// 	op = this.thumbCompiler.constructEOR(rd, rm);
-		// 	break;
-		// case 0x0080:
-		// 	// LSL(2)
-		// 	op = this.thumbCompiler.constructLSL2(rd, rm);
-		// 	break;
-		// case 0x00C0:
-		// 	// LSR(2)
-		// 	op = this.thumbCompiler.constructLSR2(rd, rm);
-		// 	break;
-		// case 0x0100:
-		// 	// ASR(2)
-		// 	op = this.thumbCompiler.constructASR2(rd, rm);
-		// 	break;
-		// case 0x0140:
-		// 	// ADC
-		// 	op = this.thumbCompiler.constructADC(rd, rm);
-		// 	break;
-		// case 0x0180:
-		// 	// SBC
-		// 	op = this.thumbCompiler.constructSBC(rd, rm);
-		// 	break;
-		// case 0x01C0:
-		// 	// ROR
-		// 	op = this.thumbCompiler.constructROR(rd, rm);
-		// 	break;
-		// case 0x0200:
-		// 	// TST
-		// 	op = this.thumbCompiler.constructTST(rd, rm);
-		// 	break;
-		// case 0x0240:
-		// 	// NEG
-		// 	op = this.thumbCompiler.constructNEG(rd, rm);
-		// 	break;
-		// case 0x0280:
-		// 	// CMP(2)
-		// 	op = this.thumbCompiler.constructCMP2(rd, rm);
-		// 	break;
-		// case 0x02C0:
-		// 	// CMN
-		// 	op = this.thumbCompiler.constructCMN(rd, rm);
-		// 	break;
-		// case 0x0300:
-		// 	// ORR
-		// 	op = this.thumbCompiler.constructORR(rd, rm);
-		// 	break;
-		// case 0x0340:
-		// 	// MUL
-		// 	op = this.thumbCompiler.constructMUL(rd, rm);
-		// 	break;
-		// case 0x0380:
-		// 	// BIC
-		// 	op = this.thumbCompiler.constructBIC(rd, rm);
-		// 	break;
-		// case 0x03C0:
-		// 	// MVN
-		// 	op = this.thumbCompiler.constructMVN(rd, rm);
-		// 	break;
-		// }
+		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+	
+		// Switch on the opcode
+		switch (instruction & 0x03C0) {
+
+			// AND
+			case 0x0000:
+				gprs[rd] = gprs[rd] & gprs[rm];
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// EOR
+			case 0x0040:
+				gprs[rd] = gprs[rd] ^ gprs[rm];
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+		
+
+			// LSL(2)
+			case 0x0080:
+				var rs = gprs[rm] & 0xFF;
+				if (rs) {
+					if (rs < 32) {
+						cpu.cpsrC = gprs[rd] & (1 << (32 - rs));
+						gprs[rd] <<= rs;
+					} else {
+						if (rs > 32) {
+							cpu.cpsrC = 0;
+						} else {
+							cpu.cpsrC = gprs[rd] & 0x00000001;
+						}
+						gprs[rd] = 0;
+					}
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+			
+			// LSR(2)
+			case 0x00C0:
+				var rs = gprs[rm] & 0xFF;
+				if (rs) {
+					if (rs < 32) {
+						cpu.cpsrC = gprs[rd] & (1 << (rs - 1));
+						gprs[rd] >>>= rs;
+					} else {
+						if (rs > 32) {
+							cpu.cpsrC = 0;
+						} else {
+							cpu.cpsrC = gprs[rd] >> 31;
+						}
+						gprs[rd] = 0;
+					}
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// ASR(2)
+			case 0x0100:
+				var rs = gprs[rm] & 0xFF;
+				if (rs) {
+					if (rs < 32) {
+						cpu.cpsrC = gprs[rd] & (1 << (rs - 1));
+						gprs[rd] >>= rs;
+					} else {
+						cpu.cpsrC = gprs[rd] >> 31;
+						if (cpu.cpsrC) {
+							gprs[rd] = 0xFFFFFFFF;
+						} else {
+							gprs[rd] = 0;
+						}
+					}
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+			
+			// ADC
+			case 0x0140:
+				var m = (gprs[rm] >>> 0) + !!cpu.cpsrC;
+				var oldD = gprs[rd];
+				var d = (oldD >>> 0) + m;
+				var oldDn = oldD >> 31;
+				var dn = d >> 31;
+				var mn = m >> 31;
+				cpu.cpsrN = dn;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = d > 0xFFFFFFFF;
+				cpu.cpsrV = oldDn === mn && oldDn != dn && mn != dn;
+				gprs[rd] = d;
+				break;
+
+			// SBC
+			case 0x0180:
+				var m = (gprs[rm] >>> 0) + !cpu.cpsrC;
+				var d = (gprs[rd] >>> 0) - m;
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rd] >>> 0) >= (d >>> 0);
+				cpu.cpsrV = ((gprs[rd] ^ m) >> 31) && ((gprs[rd] ^ d) >> 31);
+				gprs[rd] = d;
+				break;
+
+			// ROR
+			case 0x01C0:
+				var rs = gprs[rm] & 0xFF;
+				if (rs) {
+					var r4 = rs & 0x1F;
+					if (r4 > 0) {
+						cpu.cpsrC = gprs[rd] & (1 << (r4 - 1));
+						gprs[rd] = (gprs[rd] >>> r4) | (gprs[rd] << (32 - r4));
+					} else {
+						cpu.cpsrC = gprs[rd] >> 31;
+					}
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// TST
+			case 0x0200:
+				var aluOut = gprs[rd] & gprs[rm];
+				cpu.cpsrN = aluOut >> 31;
+				cpu.cpsrZ = !(aluOut & 0xFFFFFFFF);
+				break;
+
+			// NEG
+			case 0x0240:
+				var d = -gprs[rm];
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = 0 >= (d >>> 0);
+				cpu.cpsrV = (gprs[rm] >> 31) && (d >> 31);
+				gprs[rd] = d;
+				break;
+
+			// CMP(2)
+			case 0x0280:
+				var d = gprs[rd];
+				var m = gprs[rm];
+				var aluOut = d - m;
+				var an = aluOut >> 31;
+				var dn = d >> 31;
+				cpu.cpsrN = an;
+				cpu.cpsrZ = !(aluOut & 0xFFFFFFFF);
+				cpu.cpsrC = (d >>> 0) >= (m >>> 0);
+				cpu.cpsrV = dn != (m >> 31) && dn != an;
+				break;
+			
+			// CMN
+			case 0x02C0:
+				var aluOut = (gprs[rd] >>> 0) + (gprs[rm] >>> 0);
+				cpu.cpsrN = aluOut >> 31;
+				cpu.cpsrZ = !(aluOut & 0xFFFFFFFF);
+				cpu.cpsrC = aluOut > 0xFFFFFFFF;
+				cpu.cpsrV = (gprs[rd] >> 31) === (gprs[rm] >> 31) &&
+							(gprs[rd] >> 31) != (aluOut >> 31) &&
+							(gprs[rm] >> 31) != (aluOut >> 31);
+				break;
+
+			// ORR
+			case 0x0300:
+				gprs[rd] = gprs[rd] | gprs[rm];
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// MUL
+			case 0x0340:
+				cpu.mmu.waitMul(gprs[rm]);
+				if ((gprs[rm] & 0xFFFF0000) && (gprs[rd] & 0xFFFF0000)) {
+					// Our data type is a double--we'll lose bits if we do it all at once!
+					var hi = ((gprs[rd] & 0xFFFF0000) * gprs[rm]) & 0xFFFFFFFF;
+					var lo = ((gprs[rd] & 0x0000FFFF) * gprs[rm]) & 0xFFFFFFFF;
+					gprs[rd] = (hi + lo) & 0xFFFFFFFF;
+				}
+				else {
+					gprs[rd] *= gprs[rm];
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// BIC
+			case 0x0380:
+				gprs[rd] = gprs[rd] & ~gprs[rm];
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// MVN
+			case 0x03C0:
+				gprs[rd] = ~gprs[rm];
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+		
+		}
 
 		writesPC = false;
+
 	}
 	else if ((instruction & 0xFC00) === 0x4400) {
+
 		// Special data processing / branch/exchange instruction set
+
 		var rm = (instruction & 0x0078) >> 3;
 		var rn = instruction & 0x0007;
 		var h1 = instruction & 0x0080;
 		var rd = rn | (h1 >> 4);
 
-		var opcode = instruction & 0x0300;
-
 		interpret = true;
-		writesPC = this.thumbCompiler.runOpVer4(this, opcode, rd, rm);
 
-		// switch (instruction & 0x0300) {
-		// case 0x0000:
-		// 	// ADD(4)
-		// 	op = this.thumbCompiler.constructADD4(rd, rm)
-		// 	writesPC = rd === this.PC;
-		// 	break;
-		// case 0x0100:
-		// 	// CMP(3)
-		// 	op = this.thumbCompiler.constructCMP3(rd, rm);
-		// 	writesPC = false;
-		// 	break;
-		// case 0x0200:
-		// 	// MOV(3)
-		// 	op = this.thumbCompiler.constructMOV3(rd, rm);
-		// 	writesPC = rd === this.PC;
-		// 	break;
-		// case 0x0300:
-		// 	// BX
-		// 	op = this.thumbCompiler.constructBX(rd, rm);
-		// 	writesPC = true;
-		// 	break;
-		// }
+		// Switch on the opcode
+		switch (instruction & 0x0300) {
+
+			// ADD(4)
+			case 0x0000:
+				writesPC = rd === cpu.PC;
+				gprs[cpu.PC] += this.instructionWidth;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] += gprs[rm];
+				break;
+
+			// CMP(3)
+			case 0x0100:
+				gprs[cpu.PC] += this.instructionWidth;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				var aluOut = gprs[rd] - gprs[rm];
+				cpu.cpsrN = aluOut >> 31;
+				cpu.cpsrZ = !(aluOut & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rd] >>> 0) >= (gprs[rm] >>> 0);
+				cpu.cpsrV = ((gprs[rd] ^ gprs[rm]) >> 31) && ((gprs[rd] ^ aluOut) >> 31);
+				writesPC = false;
+				break;
+
+			// MOV(3)
+			case 0x0200:
+				writesPC = rd === cpu.PC;
+				gprs[cpu.PC] += this.instructionWidth;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = gprs[rm];
+				break;
+
+			// BX
+			case 0x0300:
+				gprs[cpu.PC] += this.instructionWidth;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				cpu.switchExecMode(gprs[rm] & 0x00000001);
+				var misalign = 0;
+				if (rm === 15) {
+					misalign = gprs[rm] & 0x00000002;
+				}
+				gprs[cpu.PC] = gprs[rm] & 0xFFFFFFFE - misalign;
+				writesPC = true;
+				break;
+
+		}
 
 	}
 	else if ((instruction & 0xF800) === 0x1800) {
+
 		// Add/subtract
+
 		var rm = (instruction & 0x01C0) >> 6;
 		var rn = (instruction & 0x0038) >> 3;
 		var rd = instruction & 0x0007;
+
+		interpret = true;
+		gprs[this.PC] += this.instructionWidth;
+
+		// Switch on the opcode
 		switch (instruction & 0x0600) {
-		case 0x0000:
-			// ADD(3)
-			op = this.thumbCompiler.constructADD3(rd, rn, rm);
-			break;
-		case 0x0200:
-			// SUB(3)
-			op = this.thumbCompiler.constructSUB3(rd, rn, rm);
-			break;
-		case 0x0400:
-			var immediate = (instruction & 0x01C0) >> 6;
-			if (immediate) {
-				// ADD(1)
-				op = this.thumbCompiler.constructADD1(rd, rn, immediate);
-			} else {
-				// MOV(2)
-				op = this.thumbCompiler.constructMOV2(rd, rn, rm);
-			}
-			break;
-		case 0x0600:
-			// SUB(1)
-			var immediate = (instruction & 0x01C0) >> 6;
-			op = this.thumbCompiler.constructSUB1(rd, rn, immediate);
-			break;
+			
+			case 0x0000:
+				// ADD(3)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				var d = (gprs[rn] >>> 0) + (gprs[rm] >>> 0);
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = d > 0xFFFFFFFF;
+				cpu.cpsrV = !((gprs[rn] ^ gprs[rm]) >> 31) && ((gprs[rn] ^ d) >> 31) && ((gprs[rm] ^ d) >> 31);
+				gprs[rd] = d;
+				break;
+			
+			case 0x0200:
+				// SUB(3)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				var d = gprs[rn] - gprs[rm];
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rn] >>> 0) >= (gprs[rm] >>> 0);
+				cpu.cpsrV = (gprs[rn] >> 31) != (gprs[rm] >> 31) &&
+							(gprs[rn] >> 31) != (d >> 31);
+				gprs[rd] = d;
+				break;
+			
+			case 0x0400:
+				var immediate = (instruction & 0x01C0) >> 6;
+				if (immediate) {
+					// ADD(1)
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					var d = (gprs[rn] >>> 0) + immediate;
+					cpu.cpsrN = d >> 31;
+					cpu.cpsrZ = !(d & 0xFFFFFFFF);
+					cpu.cpsrC = d > 0xFFFFFFFF;
+					cpu.cpsrV = !(gprs[rn] >> 31) && ((gprs[rn] >> 31 ^ d) >> 31) && (d >> 31);
+					gprs[rd] = d;
+				}
+				else {
+					// MOV(2)
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					var d = gprs[rn];
+					cpu.cpsrN = d >> 31;
+					cpu.cpsrZ = !(d & 0xFFFFFFFF);
+					cpu.cpsrC = 0;
+					cpu.cpsrV = 0;
+					gprs[rd] = d;
+				}
+				break;
+			
+			case 0x0600:
+				// SUB(1)
+				var immediate = (instruction & 0x01C0) >> 6;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				var d = gprs[rn] - immediate;
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rn] >>> 0) >= immediate;
+				cpu.cpsrV = (gprs[rn] >> 31) && ((gprs[rn] ^ d) >> 31);
+				gprs[rd] = d;
+				break;
+		
 		}
+		
 		writesPC = false;
+
 	}
 	else if (!(instruction & 0xE000)) {
+		
 		// Shift by immediate
+		
 		var rd = instruction & 0x0007;
 		var rm = (instruction & 0x0038) >> 3;
 		var immediate = (instruction & 0x07C0) >> 6;
 
-		var opcode = instruction & 0x1800;
-
 		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
-		this.thumbCompiler.runOpVer2(opcode, rd, rm, immediate);
-		
-		// switch (instruction & 0x1800) {
-		// case 0x0000:
-		// 	// LSL(1)
-		// 	op = this.thumbCompiler.constructLSL1(rd, rm, immediate);
-		// 	break;
-		// case 0x0800:
-		// 	// LSR(1)
-		// 	op = this.thumbCompiler.constructLSR1(rd, rm, immediate);
-		// 	break;
-		// case 0x1000:
-		// 	// ASR(1)
-		// 	op = this.thumbCompiler.constructASR1(rd, rm, immediate);
-		// 	break;
-		// case 0x1800:
-		// 	break;
-		// }
+
+		// Switch on the opcode
+		switch (instruction & 0x1800) {
+
+			// LSL(1)
+			case 0x0000:
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				if (immediate === 0) {
+					gprs[rd] = gprs[rm];
+				} else {
+					cpu.cpsrC = gprs[rm] & (1 << (32 - immediate));
+					gprs[rd] = gprs[rm] << immediate;
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// LSR(1)
+			case 0x0800:
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				if (immediate === 0) {
+					cpu.cpsrC = gprs[rm] >> 31;
+					gprs[rd] = 0;
+				}
+				else {
+					cpu.cpsrC = gprs[rm] & (1 << (immediate - 1));
+					gprs[rd] = gprs[rm] >>> immediate;
+				}
+				cpu.cpsrN = 0;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			// ASR(1)
+			case 0x1000:
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				if (immediate === 0) {
+					cpu.cpsrC = gprs[rm] >> 31;
+					if (cpu.cpsrC) {
+						gprs[rd] = 0xFFFFFFFF;
+					}
+					else {
+						gprs[rd] = 0;
+					}
+				}
+				else {
+					cpu.cpsrC = gprs[rm] & (1 << (immediate - 1));
+					gprs[rd] = gprs[rm] >> immediate;
+				}
+				cpu.cpsrN = gprs[rd] >> 31;
+				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
+				break;
+
+			case 0x1800:
+				//???
+				break;
+
+		}
 
 		writesPC = false;
+
 	}
 	else if ((instruction & 0xE000) === 0x2000) {
+
 		// Add/subtract/compare/move immediate
+
 		var immediate = instruction & 0x00FF;
 		var rn = (instruction & 0x0700) >> 8;
 
-		var opcode = instruction & 0x1800;
+		interpret = true;
+		gprs[this.PC] += this.instructionWidth;
+
+		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+		
+		// Switch on the opcode
+		switch (instruction & 0x1800) {
+			
+			// MOV(1)
+			case 0x0000:
+				gprs[rn] = immediate;
+				cpu.cpsrN = immediate >> 31;
+				cpu.cpsrZ = !(immediate & 0xFFFFFFFF);
+				break;
+
+			// CMP(1)
+			case 0x0800:
+				var aluOut = gprs[rn] - immediate;
+				cpu.cpsrN = aluOut >> 31;
+				cpu.cpsrZ = !(aluOut & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rn] >>> 0) >= immediate;
+				cpu.cpsrV = (gprs[rn] >> 31) && ((gprs[rn] ^ aluOut) >> 31);
+				break;
+
+			// ADD(2)
+			case 0x1000:
+				var d = (gprs[rn] >>> 0) + immediate;
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = d > 0xFFFFFFFF;
+				cpu.cpsrV = !(gprs[rn] >> 31) && ((gprs[rn] ^ d) >> 31) && ((immediate ^ d) >> 31);
+				gprs[rn] = d;
+				break;
+
+			// SUB(2)
+			case 0x1800:
+				var d = gprs[rn] - immediate;
+				cpu.cpsrN = d >> 31;
+				cpu.cpsrZ = !(d & 0xFFFFFFFF);
+				cpu.cpsrC = (gprs[rn] >>> 0) >= immediate;
+				cpu.cpsrV = (gprs[rn] >> 31) && ((gprs[rn] ^ d) >> 31);
+				gprs[rn] = d;
+				break;
+
+		}
+
+		writesPC = false;
+
+	}
+	else if ((instruction & 0xF800) === 0x4800) {
+
+		// LDR(3)
+
+		var rd = (instruction & 0x0700) >> 8;
+		var immediate = (instruction & 0x00FF) << 2;
 
 		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
-		this.thumbCompiler.runOpVer1(opcode, rn, immediate);
 
-		// switch (instruction & 0x1800) {
-		// case 0x0000:
-		// 	// MOV(1)
-		// 	op = this.thumbCompiler.constructMOV1(rn, immediate);
-		// 	break;
-		// case 0x0800:
-		// 	// CMP(1)
-		// 	op = this.thumbCompiler.constructCMP1(rn, immediate);
-		// 	break;
-		// case 0x1000:
-		// 	// ADD(2)
-		// 	op = this.thumbCompiler.constructADD2(rn, immediate);
-		// 	break;
-		// case 0x1800:
-		// 	// SUB(2)
-		// 	op = this.thumbCompiler.constructSUB2(rn, immediate);
-		// 	break;
-		// }
+		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+		gprs[rd] = cpu.mmu.load32((gprs[cpu.PC] & 0xFFFFFFFC) + immediate);
+		cpu.mmu.wait32(gprs[cpu.PC]);
+		++cpu.cycles;
+		
+		writesPC = false;
 
-		writesPC = false;
-	}
-	else if ((instruction & 0xF800) === 0x4800) {
-		// LDR(3)
-		var rd = (instruction & 0x0700) >> 8;
-		var immediate = (instruction & 0x00FF) << 2;
-		op = this.thumbCompiler.constructLDR3(rd, immediate);
-		writesPC = false;
 	}
 	else if ((instruction & 0xF000) === 0x5000) {
+		
 		// Load and store with relative offset
+		
 		var rd = instruction & 0x0007;
 		var rn = (instruction & 0x0038) >> 3;
 		var rm = (instruction & 0x01C0) >> 6;
+		
+		interpret = true;
+		gprs[this.PC] += this.instructionWidth;
+
 		var opcode = instruction & 0x0E00;
+		
 		switch (opcode) {
-		case 0x0000:
-			// STR(2)
-			op = this.thumbCompiler.constructSTR2(rd, rn, rm);
-			break;
-		case 0x0200:
-			// STRH(2)
-			op = this.thumbCompiler.constructSTRH2(rd, rn, rm);
-			break;
-		case 0x0400:
-			// STRB(2)
-			op = this.thumbCompiler.constructSTRB2(rd, rn, rm);
-			break;
-		case 0x0600:
-			// LDRSB
-			op = this.thumbCompiler.constructLDRSB(rd, rn, rm);
-			break;
-		case 0x0800:
-			// LDR(2)
-			op = this.thumbCompiler.constructLDR2(rd, rn, rm);
-			break;
-		case 0x0A00:
-			// LDRH(2)
-			op = this.thumbCompiler.constructLDRH2(rd, rn, rm);
-			break;
-		case 0x0C00:
-			// LDRB(2)
-			op = this.thumbCompiler.constructLDRB2(rd, rn, rm);
-			break;
-		case 0x0E00:
-			// LDRSH
-			op = this.thumbCompiler.constructLDRSH(rd, rn, rm);
-			break;
+			
+
+			case 0x0000:
+				// STR(2)
+				cpu.mmu.store32(gprs[rn] + gprs[rm], gprs[rd]);
+				cpu.mmu.wait(gprs[cpu.PC]);
+				cpu.mmu.wait32(gprs[rn] + gprs[rm]);
+				break;
+			
+
+			case 0x0200:
+				// STRH(2)
+				cpu.mmu.store16(gprs[rn] + gprs[rm], gprs[rd]);
+				cpu.mmu.wait(gprs[cpu.PC]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				break;
+			
+
+			case 0x0400:
+				// STRB(2)
+				cpu.mmu.store8(gprs[rn] + gprs[rm], gprs[rd]);
+				cpu.mmu.wait(gprs[cpu.PC]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				break;
+			
+
+			case 0x0600:
+				// LDRSB
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.load8(gprs[rn] + gprs[rm]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				++cpu.cycles;
+				break;
+			
+
+			case 0x0800:
+				// LDR(2)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.load32(gprs[rn] + gprs[rm]);
+				cpu.mmu.wait32(gprs[rn] + gprs[rm]);
+				++cpu.cycles;
+				break;
+			
+
+			case 0x0A00:
+				// LDRH(2)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.loadU16(gprs[rn] + gprs[rm]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				++cpu.cycles;
+				break;
+			
+
+			case 0x0C00:
+				// LDRB(2)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.loadU8(gprs[rn] + gprs[rm]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				++cpu.cycles;
+				break;
+			
+
+			case 0x0E00:
+				// LDRSH
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.load16(gprs[rn] + gprs[rm]);
+				cpu.mmu.wait(gprs[rn] + gprs[rm]);
+				++cpu.cycles;
+				break;
 		}
+		
 		writesPC = false;
+	
 	}
 	else if ((instruction & 0xE000) === 0x6000) {
+		
 		// Load and store with immediate offset
+		
 		var rd = instruction & 0x0007;
 		var rn = (instruction & 0x0038) >> 3;
 		var immediate = (instruction & 0x07C0) >> 4;
+		
 		var b = instruction & 0x1000;
 		if (b) {
 			immediate >>= 2;
 		}
+		
+		interpret = true;
+		gprs[this.PC] += this.instructionWidth;
+		
 		var load = instruction & 0x0800;
 		if (load) {
 			if (b) {
 				// LDRB(1)
-				op = this.thumbCompiler.constructLDRB1(rd, rn, immediate);
-			} else {
-				// LDR(1)
-				op = this.thumbCompiler.constructLDR1(rd, rn, immediate);
+				var n = gprs[rn] + immediate;
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				gprs[rd] = cpu.mmu.loadU8(n);
+				cpu.mmu.wait(n);
+				++cpu.cycles;
 			}
-		} else {
-			if (b) {
-				// STRB(1)
-				op = this.thumbCompiler.constructSTRB1(rd, rn, immediate);
-			} else {
-				// STR(1)
-				op = this.thumbCompiler.constructSTR1(rd, rn, immediate);
+			else {
+				// LDR(1)
+				cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+				var n = gprs[rn] + immediate;
+				gprs[rd] = cpu.mmu.load32(n);
+				cpu.mmu.wait32(n);
+				++cpu.cycles;
 			}
 		}
+		else {
+			if (b) {
+				// STRB(1)
+				var n = gprs[rn] + immediate;
+				cpu.mmu.store8(n, gprs[rd]);
+				cpu.mmu.wait(gprs[cpu.PC]);
+				cpu.mmu.wait(n);
+			}
+			else {
+				// STR(1)
+				var n = gprs[rn] + immediate;
+				cpu.mmu.store32(n, gprs[rd]);
+				cpu.mmu.wait(gprs[cpu.PC]);
+				cpu.mmu.wait32(n);
+			}
+		}
+
 		writesPC = false;
+
 	}
 	else if ((instruction & 0xF600) === 0xB400) {
+		
 		// Push and pop registers
+		
 		var r = !!(instruction & 0x0100);
 		var rs = instruction & 0x00FF;
+
+		interpret = true;
+		gprs[this.PC] += this.instructionWidth;
+		
 		if (instruction & 0x0800) {
+			
 			// POP
-			op = this.thumbCompiler.constructPOP(rs, r);
+			
+			cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+			++cpu.cycles;
+			var address = gprs[cpu.SP];
+			var total = 0;
+			var m, i;
+			for (m = 0x01, i = 0; i < 8; m <<= 1, ++i) {
+				if (rs & m) {
+					cpu.mmu.waitSeq32(address);
+					gprs[i] = cpu.mmu.load32(address);
+					address += 4;
+					++total;
+				}
+			}
+			if (r) {
+				gprs[cpu.PC] = cpu.mmu.load32(address) & 0xFFFFFFFE;
+				address += 4;
+				++total;
+			}
+			cpu.mmu.waitMulti32(address, total);
+			gprs[cpu.SP] = address;
+			
 			writesPC = r;
-		} else {
+
+		}
+		else {
+			
 			// PUSH
-			op = this.thumbCompiler.constructPUSH(rs, r);
+			
+			var address = gprs[cpu.SP] - 4;
+			var total = 0;
+			cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+			if (r) {
+				cpu.mmu.store32(address, gprs[cpu.LR]);
+				address -= 4;
+				++total;
+			}
+			var m, i;
+			for (m = 0x80, i = 7; m; m >>= 1, --i) {
+				if (rs & m) {
+					cpu.mmu.store32(address, gprs[i]);
+					address -= 4;
+					++total;
+					break;
+				}
+			}
+			for (m >>= 1, --i; m; m >>= 1, --i) {
+				if (rs & m) {
+					cpu.mmu.store32(address, gprs[i]);
+					address -= 4;
+					++total;
+				}
+			}
+			cpu.mmu.waitMulti32(address, total);
+			gprs[cpu.SP] = address + 4;
+			
 			writesPC = false;
+		
 		}
 	}
 	else if (instruction & 0x8000) {
+		
 		switch (instruction & 0x7000) {
-		case 0x0000:
-			// Load and store halfword
-			var rd = instruction & 0x0007;
-			var rn = (instruction & 0x0038) >> 3;
-			var immediate = (instruction & 0x07C0) >> 5;
-			if (instruction & 0x0800) {
-				// LDRH(1)
-				op = this.thumbCompiler.constructLDRH1(rd, rn, immediate);
-			} else {
-				// STRH(1)
-				op = this.thumbCompiler.constructSTRH1(rd, rn, immediate);
-			}
-			writesPC = false;
-			break;
-		case 0x1000:
-			// SP-relative load and store
-			var rd = (instruction & 0x0700) >> 8;
-			var immediate = (instruction & 0x00FF) << 2;
-			var load = instruction & 0x0800;
-			if (load) {
-				// LDR(4)
-				op = this.thumbCompiler.constructLDR4(rd, immediate);
-			} else {
-				// STR(3)
-				op = this.thumbCompiler.constructSTR3(rd, immediate);
-			}
-			writesPC = false;
-			break;
-		case 0x2000:
-			// Load address
-			var rd = (instruction & 0x0700) >> 8;
-			var immediate = (instruction & 0x00FF) << 2;
-			if (instruction & 0x0800) {
-				// ADD(6)
-				op = this.thumbCompiler.constructADD6(rd, immediate);
-			} else {
-				// ADD(5)
-				op = this.thumbCompiler.constructADD5(rd, immediate);
-			}
-			writesPC = false;
-			break;
-		case 0x3000:
-			// Miscellaneous
-			if (!(instruction & 0x0F00)) {
-				// Adjust stack pointer
-				// ADD(7)/SUB(4)
-				var b = instruction & 0x0080;
-				var immediate = (instruction & 0x7F) << 2;
-				if (b) {
-					immediate = -immediate;
-				}
-				op = this.thumbCompiler.constructADD7(immediate)
-				writesPC = false;
-			}
-			break;
-		case 0x4000:
-			// Multiple load and store
-			var rn = (instruction & 0x0700) >> 8;
-			var rs = instruction & 0x00FF;
-			if (instruction & 0x0800) {
-				// LDMIA
-				op = this.thumbCompiler.constructLDMIA(rn, rs);
-			} else {
-				// STMIA
-				op = this.thumbCompiler.constructSTMIA(rn, rs);
-			}
-			writesPC = false;
-			break;
-		case 0x5000:
-			// Conditional branch
-			var cond = (instruction & 0x0F00) >> 8;
-			var immediate = (instruction & 0x00FF);
-			if (cond === 0xF) {
-				// SWI
-				op = this.thumbCompiler.constructSWI(immediate);
-				writesPC = false;
-			} else {
-				// B(1)
-				if (instruction & 0x0080) {
-					immediate |= 0xFFFFFF00;
-				}
-				immediate <<= 1;
-				var condOp = this.conds[cond];
-				op = this.thumbCompiler.constructB1(immediate, condOp);
-				writesPC = true;
-			}
-			break;
-		case 0x6000:
-		case 0x7000:
-			// BL(X)
-			var immediate = instruction & 0x07FF;
-			var h = instruction & 0x1800;
-			switch (h) {
+			
 			case 0x0000:
-				// B(2)
-				if (immediate & 0x0400) {
-					immediate |= 0xFFFFF800;
+				
+				// Load and store halfword
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				var rd = instruction & 0x0007;
+				var rn = (instruction & 0x0038) >> 3;
+				var immediate = (instruction & 0x07C0) >> 5;
+				
+				if (instruction & 0x0800) {
+					// LDRH(1)
+					var n = gprs[rn] + immediate;
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					gprs[rd] = cpu.mmu.loadU16(n);
+					cpu.mmu.wait(n);
+					++cpu.cycles;
 				}
-				immediate <<= 1;
-				op = this.thumbCompiler.constructB2(immediate);
-				writesPC = true;
-				break;
-			case 0x0800:
-				// BLX (ARMv5T)
-				/*op = function() {
-					var pc = gprs[cpu.PC];
-					gprs[cpu.PC] = (gprs[cpu.LR] + (immediate << 1)) & 0xFFFFFFFC;
-					gprs[cpu.LR] = pc - 1;
-					cpu.switchExecMode(cpu.MODE_ARM);
-				}*/
-				break;
-			case 0x1000:
-				// BL(1)
-				if (immediate & 0x0400) {
-					immediate |= 0xFFFFFC00;
+				else {
+					// STRH(1)
+					var n = gprs[rn] + immediate;
+					cpu.mmu.store16(n, gprs[rd]);
+					cpu.mmu.wait(gprs[cpu.PC]);
+					cpu.mmu.wait(n);
 				}
-				immediate <<= 12;
-				op = this.thumbCompiler.constructBL1(immediate);
+				
 				writesPC = false;
+				
 				break;
-			case 0x1800:
-				// BL(2)
-				op = this.thumbCompiler.constructBL2(immediate);
-				writesPC = true;
+			
+			case 0x1000:
+				
+				// SP-relative load and store
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				var rd = (instruction & 0x0700) >> 8;
+				var immediate = (instruction & 0x00FF) << 2;
+				var load = instruction & 0x0800;
+				
+				if (load) {
+					// LDR(4)
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					gprs[rd] = cpu.mmu.load32(gprs[cpu.SP] + immediate);
+					cpu.mmu.wait32(gprs[cpu.SP] + immediate);
+					++cpu.cycles;
+				}
+				else {
+					// STR(3)
+					cpu.mmu.store32(gprs[cpu.SP] + immediate, gprs[rd]);
+					cpu.mmu.wait(gprs[cpu.PC]);
+					cpu.mmu.wait32(gprs[cpu.SP] + immediate);
+				}
+				
+				writesPC = false;
+				
 				break;
-			}
-			break;
-		default:
-			this.WARN("Undefined instruction: 0x" + instruction.toString(16));
+			
+			case 0x2000:
+				
+				// Load address
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				var rd = (instruction & 0x0700) >> 8;
+				var immediate = (instruction & 0x00FF) << 2;
+				if (instruction & 0x0800) {
+					// ADD(6)
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					gprs[rd] = gprs[cpu.SP] + immediate;
+				}
+				else {
+					// ADD(5)
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					gprs[rd] = (gprs[cpu.PC] & 0xFFFFFFFC) + immediate;
+				}
+				
+				writesPC = false;
+				
+				break;
+			
+			case 0x3000:
+				
+				// Miscellaneous
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				if (!(instruction & 0x0F00)) {
+					
+					// Adjust stack pointer
+					// ADD(7)/SUB(4)
+					
+					// var b = instruction & 0x0080;
+					var immediate = (instruction & 0x7F) << 2;
+					
+					// Check if to negate the immediate, meaning its SUB(4)
+					if (instruction & 0x0080) {
+						immediate = -immediate;
+					}
+
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					gprs[cpu.SP] += immediate;
+					
+					writesPC = false;
+				
+				}
+				break;
+			
+			case 0x4000:
+				
+				// Multiple load and store
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				var rn = (instruction & 0x0700) >> 8;
+				var rs = instruction & 0x00FF;
+				
+				if (instruction & 0x0800) {
+					// LDMIA
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					var address = gprs[rn];
+					var total = 0;
+					var m, i;
+					for (m = 0x01, i = 0; i < 8; m <<= 1, ++i) {
+						if (rs & m) {
+							gprs[i] = cpu.mmu.load32(address);
+							address += 4;
+							++total;
+						}
+					}
+					cpu.mmu.waitMulti32(address, total);
+					if (!((1 << rn) & rs)) {
+						gprs[rn] = address;
+					}
+				}
+				else {
+					// STMIA
+					cpu.mmu.wait(gprs[cpu.PC]);
+					var address = gprs[rn];
+					var total = 0;
+					var m, i;
+					for (m = 0x01, i = 0; i < 8; m <<= 1, ++i) {
+						if (rs & m) {
+							cpu.mmu.store32(address, gprs[i]);
+							address += 4;
+							++total;
+							break;
+						}
+					}
+					for (m <<= 1, ++i; i < 8; m <<= 1, ++i) {
+						if (rs & m) {
+							cpu.mmu.store32(address, gprs[i]);
+							address += 4;
+							++total;
+						}
+					}
+					cpu.mmu.waitMulti32(address, total);
+					gprs[rn] = address;
+				}
+				
+				writesPC = false;
+				
+				break;
+			
+			case 0x5000:
+				
+				// Conditional branch
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				var cond = (instruction & 0x0F00) >> 8;
+				var immediate = (instruction & 0x00FF);
+				
+				if (cond === 0xF) {
+					// SWI
+					cpu.irq.swi(immediate);
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					writesPC = false;
+				}
+				else {
+					// B(1)
+					if (instruction & 0x0080) {
+						immediate |= 0xFFFFFF00;
+					}
+					immediate <<= 1;
+					var condOp = this.conds[cond];
+					cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+					if (condOp()) {
+						gprs[cpu.PC] += immediate;
+					}
+					writesPC = true;
+				}
+				break;
+			
+			case 0x6000:
+			
+			case 0x7000:
+				// BL(X)
+				
+				var immediate = instruction & 0x07FF;
+				var h = instruction & 0x1800;
+
+				interpret = true;
+				gprs[this.PC] += this.instructionWidth;
+				
+				switch (h) {
+				
+					case 0x0000:
+						// B(2)
+						if (immediate & 0x0400) {
+							immediate |= 0xFFFFF800;
+						}
+						immediate <<= 1;
+						cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+						gprs[cpu.PC] += immediate;
+						writesPC = true;
+						break;
+					
+					case 0x0800:
+						// BLX (ARMv5T)
+						/*op = function() {
+							var pc = gprs[cpu.PC];
+							gprs[cpu.PC] = (gprs[cpu.LR] + (immediate << 1)) & 0xFFFFFFFC;
+							gprs[cpu.LR] = pc - 1;
+							cpu.switchExecMode(cpu.MODE_ARM);
+						}*/
+						break;
+					
+					case 0x1000:
+						// BL(1)
+						if (immediate & 0x0400) {
+							immediate |= 0xFFFFFC00;
+						}
+						immediate <<= 12;
+						cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+						gprs[cpu.LR] = gprs[cpu.PC] + immediate;
+						writesPC = false;
+						break;
+					
+					case 0x1800:
+						// BL(2)
+						cpu.mmu.waitPrefetch(gprs[cpu.PC]);
+						var pc = gprs[cpu.PC];
+						gprs[cpu.PC] = gprs[cpu.LR] + (immediate << 1);
+						gprs[cpu.LR] = pc - 1;
+						writesPC = true;
+						break;
+				
+				}
+
+				break;
+
+			default:
+				this.WARN("Undefined instruction: 0x" + instruction.toString(16));
+		
 		}
 	}
 	else {
