@@ -1,4 +1,5 @@
 function GameBoyAdvance() {
+
 	this.LOG_ERROR = 1;
 	this.LOG_WARN = 2;
 	this.LOG_STUB = 4;
@@ -12,7 +13,7 @@ function GameBoyAdvance() {
 	this.rom = null;
 
 	this.cpu = new ARMCore();
-	this.mmu = new GameBoyAdvanceMMU()
+	this.mmu = new GameBoyAdvanceMMU();
 	this.irq = new GameBoyAdvanceInterruptHandler();
 	this.io = new GameBoyAdvanceIO();
 	this.audio = new GameBoyAdvanceAudio();
@@ -72,7 +73,8 @@ function GameBoyAdvance() {
 	this.video.vblankCallback = function() {
 		self.seenFrame = true;
 	};
-};
+
+}
 
 GameBoyAdvance.prototype.setCanvas = function(canvas) {
 	var self = this;
@@ -85,10 +87,9 @@ GameBoyAdvance.prototype.setCanvas = function(canvas) {
 		var targetContext = canvas.getContext('2d');
 		this.video.drawCallback = function() {
 			targetContext.drawImage(self.indirectCanvas, 0, 0, canvas.offsetWidth, canvas.offsetHeight);
-		}
+		};
 	} else {
 		this.setCanvasDirect(canvas);
-		var self = this;
 	}
 };
 
@@ -124,7 +125,7 @@ GameBoyAdvance.prototype.loadRomFromFile = function(romFile, callback) {
 		if (callback) {
 			callback(result);
 		}
-	}
+	};
 	reader.readAsArrayBuffer(romFile);
 };
 
@@ -195,7 +196,7 @@ GameBoyAdvance.prototype.runStable = function() {
 
 	if (this.reportFPS) {
 		runFunc = function() {
-			try {
+			// try {
 				timer += Date.now() - start;
 				if (self.paused) {
 					return;
@@ -210,13 +211,13 @@ GameBoyAdvance.prototype.runStable = function() {
 					frames = 0;
 					timer = 0;
 				}
-			} catch(exception) {
-				self.ERROR(exception);
-				if (exception.stack) {
-					self.logStackTrace(exception.stack.split('\n'));
-				}
-				throw exception;
-			}
+			// } catch(exception) {
+			// 	self.ERROR(exception);
+			// 	if (exception.stack) {
+			// 		self.logStackTrace(exception.stack.split('\n'));
+			// 	}
+			// 	throw exception;
+			// }
 		};
 	} else {
 		runFunc = function() {
