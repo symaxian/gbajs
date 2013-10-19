@@ -52,7 +52,6 @@ ARMCore.prototype.resetCPU = function(startOffset) {
 	}
 	this.gprs[this.PC] = startOffset + this.WORD_SIZE_ARM;
 
-	this.loadInstruction = this.loadInstructionArm;
 	this.execMode = this.MODE_ARM;
 	this.instructionWidth = this.WORD_SIZE_ARM;
 
@@ -99,21 +98,17 @@ ARMCore.prototype.resetCPU = function(startOffset) {
 
 		this.conditionPassed = true;
 
-		// var instruction = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
-		// gprs[this.PC] += this.instructionWidth;
-		// this.execInstruction(instruction);
+		var address = gprs[this.PC] - this.instructionWidth,
+			writesPC;
 
-		var writesPC = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
+		if(this.execMode === this.MODE_ARM){
+			writesPC = this.compileArm(this.mmu.load32(address) >>> 0, address);
+		}
+		else{
+			writesPC = this.compileThumb(this.mmu.load16(address), address);
+		}
 
-		if (!writesPC) {
-			// if (this.instruction !== null) { // We might have gotten an interrupt from the instruction
-			// 	if (nextInstruction === null || nextInstruction.page.invalid) {
-			// 		// nextInstruction = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
-			// 	}
-			// 	// this.instruction = nextInstruction;
-			// }
-		} else {
-			if (this.conditionPassed) {
+		if (writesPC && this.conditionPassed) {
 				var pc = gprs[this.PC] &= 0xFFFFFFFE;
 				if (this.execMode === this.MODE_ARM) {
 					mmu.wait32(pc);
@@ -131,57 +126,6 @@ ARMCore.prototype.resetCPU = function(startOffset) {
 				// 	}
 				// 	// this.instruction = nextInstruction;
 				// }
-			}
-			// else {
-				// this.instruction = null;
-			// }
-		}
-		this.irq.updateTimers();
-	};
-
-	this.stepOLD = function() {
-
-		var nextInstruction = null;
-
-		if(this.instruction === null){
-			this.instruction = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
-		}
-		var instruction = this.instruction;
-		gprs[this.PC] += this.instructionWidth;
-		this.conditionPassed = true;
-
-		// instruction();
-		this.execInstruction(instruction);
-
-		if (!instruction.writesPC) {
-			if (this.instruction !== null) { // We might have gotten an interrupt from the instruction
-				if (nextInstruction === null || nextInstruction.page.invalid) {
-					nextInstruction = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
-				}
-				this.instruction = nextInstruction;
-			}
-		} else {
-			if (this.conditionPassed) {
-				var pc = gprs[this.PC] &= 0xFFFFFFFE;
-				if (this.execMode === this.MODE_ARM) {
-					mmu.wait32(pc);
-					mmu.waitPrefetch32(pc);
-				} else {
-					mmu.wait(pc);
-					mmu.waitPrefetch(pc);
-				}
-				gprs[this.PC] += this.instructionWidth;
-				if (!instruction.fixedJump) {
-					this.instruction = null;
-				} else if (this.instruction !== null) {
-					if (nextInstruction === null || nextInstruction.page.invalid) {
-						nextInstruction = this.loadInstruction(gprs[this.PC] - this.instructionWidth);
-					}
-					this.instruction = nextInstruction;
-				}
-			} else {
-				this.instruction = null;
-			}
 		}
 		this.irq.updateTimers();
 	};
@@ -352,54 +296,6 @@ ARMCore.prototype.fetchPage = function(address) {
 	this.page = this.mmu.accessPage(region, pageId);
 };
 
-ARMCore.prototype.loadInstructionArm = function(address) {
-	// var instruction = null;
-	// this.fetchPage(address);
-	// var offset = (address & this.pageMask) >> 2;
-	// instruction = this.page.arm[offset];
-	// if (instruction) {
-	// 	return instruction;
-	// }
-	// var opcode = this.mmu.load32(address) >>> 0;
-	// instruction = this.compileArm(opcode);
-	// // instruction.next = null;
-	// instruction.page = this.page;
-	// instruction.address = address;
-	// instruction.opcode = opcode;
-	// this.page.arm[offset] = instruction;
-	// return instruction;
-	// return {
-	// 	command: this.compileArm(opcode),
-	// 	address: address,
-	// 	opcode: opcode
-	// };
-	return this.compileArm(this.mmu.load32(address) >>> 0, address);
-};
-
-ARMCore.prototype.loadInstructionThumb = function(address) {
-	// var instruction = null;
-	// this.fetchPage(address);
-	// var offset = (address & this.pageMask) >> 1;
-	// instruction = this.page.thumb[offset];
-	// if (instruction) {
-	// 	return instruction;
-	// }
-	// var opcode = this.mmu.load16(address);
-	// instruction = this.compileThumb(opcode);
-	// // instruction.next = null;
-	// instruction.page = this.page;
-	// instruction.address = address;
-	// instruction.opcode = opcode;
-	// this.page.thumb[offset] = instruction;
-	// return instruction;
-	// return {
-	// 	command: this.compileThumb(opcode),
-	// 	address: address,
-	// 	opcode: opcode
-	// };
-	return this.compileThumb(this.mmu.load16(address), address);
-};
-
 ARMCore.prototype.selectBank = function(mode) {
 	switch (mode) {
 	case this.MODE_USER:
@@ -426,10 +322,8 @@ ARMCore.prototype.switchExecMode = function(newMode) {
 		this.execMode = newMode;
 		if (newMode === this.MODE_ARM) {
 			this.instructionWidth = this.WORD_SIZE_ARM;
-			this.loadInstruction = this.loadInstructionArm;
 		} else {
 			this.instructionWidth = this.WORD_SIZE_THUMB;
-			this.loadInstruction = this.loadInstructionThumb;
 		}
 	}
 };
@@ -596,7 +490,8 @@ ARMCore.prototype.generateConds = function() {
 ARMCore.prototype.barrelShiftImmediate = function(shiftType, immediate, rm) {
 	var cpu = this;
 	var gprs = this.gprs;
-	var shiftOp = this.badOp;
+	// var shiftOp = this.badOp;
+	var shiftOp = null;
 	switch (shiftType) {
 	case 0x00000000:
 		// LSL
@@ -665,28 +560,39 @@ ARMCore.prototype.barrelShiftImmediate = function(shiftType, immediate, rm) {
 };
 
 ARMCore.prototype.compileArm = function(instruction, address) {
-	var op = this.badOp(instruction);
+	// var op = this.badOp(instruction);
+	var op = null;
 	var i = instruction & 0x0E000000;
 	var cpu = this;
 	var gprs = this.gprs;
 
-	var writesPC = op.writesPC;
+	var writesPC = true;
 	var interpret = false;
 
-	var condOp = this.conds[(instruction & 0xF0000000) >>> 28];
 	var condOpIndex = (instruction & 0xF0000000) >>> 28;
+	var condOp = this.conds[condOpIndex];
 
 	if ((instruction & 0x0FFFFFF0) === 0x012FFF10) {
+
 		// BX
+
 		var rm = instruction & 0xF;
-		// op = this.armCompiler.constructBX(rm, condOp);
-		
+
 		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
-		this.armCompiler.runBX(this, rm, condOpIndex);
-		
+
+		cpu.mmu.waitPrefetch32(gprs[cpu.PC]);
+		if (condOpIndex < 14 && !this.checkCond(cpu, condOpIndex)) {
+			return;
+		}
+
+		cpu.switchExecMode(gprs[rm] & 0x00000001);
+		gprs[cpu.PC] = gprs[rm] & 0xFFFFFFFE;
+
 		writesPC = true;
-	} else if (!(instruction & 0x0C000000) && (i === 0x02000000 || (instruction & 0x00000090) !== 0x00000090)) {
+
+	}
+	else if (!(instruction & 0x0C000000) && (i === 0x02000000 || (instruction & 0x00000090) !== 0x00000090)) {
 		var opcode = instruction & 0x01E00000;
 		var s = instruction & 0x00100000;
 		var shiftsRs = false;
@@ -1050,12 +956,12 @@ ARMCore.prototype.compileArm = function(instruction, address) {
 
 ARMCore.prototype.compileThumb = function(instruction, address) {
 
-	var op = this.badOp(instruction & 0xFFFF);
+	// var op = this.badOp(instruction & 0xFFFF);
+	var op = null;
 	// var op = function(){ console.log(!(instruction & 0xE000) === 0x1800); throw "HALP" };
 	var cpu = this;
 	var gprs = this.gprs;
-	var writesPC = op.writesPC;
-	var interpret = false;
+	var writesPC = true;
 
 	if ((instruction & 0xFC00) === 0x4000) {
 
@@ -1064,7 +970,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rm = (instruction & 0x0038) >> 3;
 		var rd = instruction & 0x0007;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 
 		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
@@ -1085,7 +990,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				cpu.cpsrN = gprs[rd] >> 31;
 				cpu.cpsrZ = !(gprs[rd] & 0xFFFFFFFF);
 				break;
-		
 
 			// LSL(2)
 			case 0x0080:
@@ -1269,7 +1173,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		
 		}
 
-		writesPC = false;
+		return false;
 
 	}
 	else if ((instruction & 0xFC00) === 0x4400) {
@@ -1280,8 +1184,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rn = instruction & 0x0007;
 		var h1 = instruction & 0x0080;
 		var rd = rn | (h1 >> 4);
-
-		interpret = true;
 
 		// Switch on the opcode
 		switch (instruction & 0x0300) {
@@ -1338,7 +1240,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rn = (instruction & 0x0038) >> 3;
 		var rd = instruction & 0x0007;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 
 		// Switch on the opcode
@@ -1405,7 +1306,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		
 		}
 		
-		writesPC = false;
+		return false;
 
 	}
 	else if (!(instruction & 0xE000)) {
@@ -1416,7 +1317,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rm = (instruction & 0x0038) >> 3;
 		var immediate = (instruction & 0x07C0) >> 6;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 
 		// Switch on the opcode
@@ -1476,7 +1376,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 
 		}
 
-		writesPC = false;
+		return false;
 
 	}
 	else if ((instruction & 0xE000) === 0x2000) {
@@ -1486,7 +1386,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var immediate = instruction & 0x00FF;
 		var rn = (instruction & 0x0700) >> 8;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 
 		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
@@ -1532,7 +1431,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 
 		}
 
-		writesPC = false;
+		return false;
 
 	}
 	else if ((instruction & 0xF800) === 0x4800) {
@@ -1542,7 +1441,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rd = (instruction & 0x0700) >> 8;
 		var immediate = (instruction & 0x00FF) << 2;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 
 		cpu.mmu.waitPrefetch(gprs[cpu.PC]);
@@ -1550,7 +1448,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		cpu.mmu.wait32(gprs[cpu.PC]);
 		++cpu.cycles;
 		
-		writesPC = false;
+		return false;
 
 	}
 	else if ((instruction & 0xF000) === 0x5000) {
@@ -1560,8 +1458,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var rd = instruction & 0x0007;
 		var rn = (instruction & 0x0038) >> 3;
 		var rm = (instruction & 0x01C0) >> 6;
-		
-		interpret = true;
+
 		gprs[this.PC] += this.instructionWidth;
 
 		var opcode = instruction & 0x0E00;
@@ -1638,7 +1535,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				break;
 		}
 		
-		writesPC = false;
+		return false;
 	
 	}
 	else if ((instruction & 0xE000) === 0x6000) {
@@ -1653,8 +1550,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		if (b) {
 			immediate >>= 2;
 		}
-		
-		interpret = true;
+
 		gprs[this.PC] += this.instructionWidth;
 		
 		var load = instruction & 0x0800;
@@ -1693,7 +1589,7 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 			}
 		}
 
-		writesPC = false;
+		return false;
 
 	}
 	else if ((instruction & 0xF600) === 0xB400) {
@@ -1703,7 +1599,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		var r = !!(instruction & 0x0100);
 		var rs = instruction & 0x00FF;
 
-		interpret = true;
 		gprs[this.PC] += this.instructionWidth;
 		
 		if (instruction & 0x0800) {
@@ -1777,7 +1672,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// Load and store halfword
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				var rd = instruction & 0x0007;
@@ -1808,7 +1702,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// SP-relative load and store
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				var rd = (instruction & 0x0700) >> 8;
@@ -1837,7 +1730,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// Load address
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				var rd = (instruction & 0x0700) >> 8;
@@ -1861,7 +1753,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// Miscellaneous
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				if (!(instruction & 0x0F00)) {
@@ -1889,7 +1780,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// Multiple load and store
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				var rn = (instruction & 0x0700) >> 8;
@@ -1946,7 +1836,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				
 				// Conditional branch
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				var cond = (instruction & 0x0F00) >> 8;
@@ -1981,7 +1870,6 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 				var immediate = instruction & 0x07FF;
 				var h = instruction & 0x1800;
 
-				interpret = true;
 				gprs[this.PC] += this.instructionWidth;
 				
 				switch (h) {
@@ -2040,15 +1928,9 @@ ARMCore.prototype.compileThumb = function(instruction, address) {
 		throw 'Bad opcode: 0x' + instruction.toString(16);
 	}
 
-	if(interpret){
-		// The instruction has already been interpreted, so just increment the count and return
-		this.interpretedCount++;
-	}
-	else{
-		gprs[this.PC] += this.instructionWidth;
-		op();
-		this.compiledCount++;
-	}
+	// The instruction has already been interpreted, so just increment the count and return
+	this.interpretedCount++;
 
 	return writesPC;
+
 };

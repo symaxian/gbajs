@@ -272,7 +272,8 @@ GameBoyAdvanceInterruptHandler.prototype.updateTimers = function() {
 	}
 
 	this.pollNextEvent();
-}
+
+};
 
 GameBoyAdvanceInterruptHandler.prototype.resetSP = function() {
 	this.cpu.switchMode(this.cpu.MODE_SUPERVISOR);
@@ -625,8 +626,9 @@ GameBoyAdvanceInterruptHandler.prototype.pollNextEvent = function() {
 		nextEvent = test;
 	}
 
-	this.core.ASSERT(nextEvent >= this.cpu.cycles, "Next event is before present");
+	// this.core.ASSERT(nextEvent >= this.cpu.cycles, "Next event is before present");
 	this.nextEvent = nextEvent;
+
 };
 
 GameBoyAdvanceInterruptHandler.prototype.waitForIRQ = function() {

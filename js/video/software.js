@@ -1280,19 +1280,22 @@ GameBoyAdvanceSoftwareRenderer.prototype.drawScanlineBGMode0 = function(backing,
 	var yBase = (localY << 3) & 0x7C0;
 	if (size == 2) {
 		yBase += (localY << 3) & 0x800;
-	} else if (size == 3) {
+	}
+	else if (size == 3) {
 		yBase += (localY << 4) & 0x1000;
 	}
 
 	var xMask;
 	if (size & 1) {
 		xMask = 0x1FF;
-	} else {
+	}
+	else {
 		xMask = 0xFF;
 	}
 
 	video.accessMapMode0(screenBase, size, (start + xOff) & xMask, yBase, map);
 	var tileRow = video.accessTile(charBase, map.tile << paletteShift, (!map.vflip ? localYLo : 7 - localYLo) << paletteShift);
+
 	for (x = start; x < end; ++x) {
 		localX = (x + xOff) & xMask;
 		mosaicX = this.mosaic ? offset % video.bgMosaicX : 0;
@@ -1308,12 +1311,13 @@ GameBoyAdvanceSoftwareRenderer.prototype.drawScanlineBGMode0 = function(backing,
 					continue;
 				}
 			}
-		} else {
+		}
+		else {
 			if (!localXLo || (this.mosaic && !mosaicX)) {
 				video.accessMapMode0(screenBase, size, localX, yBase, map);
 			}
 			if (!(localXLo & 0x3) || (this.mosaic && !mosaicX)) {
-				tileRow = video.accessTile(charBase + (!!(localX & 0x4) == !map.hflip ? 4 : 0), map.tile << 1, (!map.vflip ? localYLo : 7 - localYLo) << 1);
+				tileRow = video.accessTile(charBase + (!!(localX & 0x4) === !map.hflip ? 4 : 0), map.tile << 1, (!map.vflip ? localYLo : 7 - localYLo) << 1);
 				if (!tileRow && !(localXLo & 0x3)) {
 					x += 3;
 					offset += 4;
@@ -1327,6 +1331,7 @@ GameBoyAdvanceSoftwareRenderer.prototype.drawScanlineBGMode0 = function(backing,
 		bg.pushPixel(index, map, video, tileRow, localXLo, offset, backing, mask, false);
 		offset++;
 	}
+
 };
 
 GameBoyAdvanceSoftwareRenderer.prototype.drawScanlineBGMode2 = function(backing, bg, start, end) {

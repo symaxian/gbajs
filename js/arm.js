@@ -1616,21 +1616,6 @@ ARMCoreArm.prototype.checkCond = function(cpu, condIndex) {
 	throw "Error: Invalid cond asked to be evaluated: "+condIndex;
 };
 
-
-ARMCoreArm.prototype.runBX = function(that, rm, condOpIndex) {
-	var cpu = this.cpu;
-	var gprs = cpu.gprs;
-
-	cpu.mmu.waitPrefetch32(gprs[cpu.PC]);
-	if (condOpIndex < 14 && !this.checkCond(cpu, condOpIndex)) {
-		return;
-	}
-
-	cpu.switchExecMode(gprs[rm] & 0x00000001);
-	gprs[cpu.PC] = gprs[rm] & 0xFFFFFFFE;
-
-};
-
 ARMCoreArm.prototype.runMul = function(that, opcode, rd, rn, rs, rm, condOpIndex){
 	var cpu = this.cpu;
 	var gprs = cpu.gprs;
@@ -1639,6 +1624,8 @@ ARMCoreArm.prototype.runMul = function(that, opcode, rd, rn, rs, rm, condOpIndex
 	if (condOpIndex < 14 && !this.checkCond(cpu, condOpIndex)) {
 		return;
 	}
+
+	var SHIFT_32 = 1/0x100000000;
 
 	switch(opcode){
 
